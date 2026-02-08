@@ -284,11 +284,8 @@ jobs:
             ADMESH_CMD=(admesh)
           fi
 
-          # Find all STL files (excluding BOSL2 library and test fixtures)
-          for stl in $(find . -name "*.stl" \
-                       -not -path "./02_Production_BOSL2/lib/*" \
-                       -not -path "./tests/fixtures/*" \
-                       2>/dev/null); do
+          # Validate only committed STLs (exclude generated CI artifacts)
+          while IFS= read -r stl; do
             total=$((total + 1))
             echo ""
             echo "--- Checking: $stl ---"
@@ -316,7 +313,7 @@ jobs:
             fi
 
             echo "PASS: $stl"
-          done
+          done < <(git ls-files '*.stl' ':!:02_Production_BOSL2/lib/*' ':!:tests/fixtures/*')
 
           echo ""
           echo "=== STL Validation Summary ==="
@@ -331,15 +328,13 @@ jobs:
 
       - name: Enforce provenance sidecars (P1.2 - BLOCKING)
         run: |
+          set -euo pipefail
           echo "=== Enforcing STL provenance sidecars ==="
           missing=0
           total=0
 
-          # Check all STLs except BOSL2 lib and test fixtures
-          for stl in $(find . -name "*.stl" \
-                       -not -path "./02_Production_BOSL2/lib/*" \
-                       -not -path "./tests/fixtures/*" \
-                       2>/dev/null); do
+          # Check provenance for committed STLs only (exclude generated CI artifacts)
+          while IFS= read -r stl; do
             total=$((total + 1))
             provenance="${stl}.provenance.json"
             if [ -f "$provenance" ]; then
@@ -348,7 +343,7 @@ jobs:
               echo "FAIL $stl MISSING PROVENANCE"
               missing=$((missing + 1))
             fi
-          done
+          done < <(git ls-files '*.stl' ':!:02_Production_BOSL2/lib/*' ':!:tests/fixtures/*')
 
           echo ""
           echo "=== Provenance Summary ==="
