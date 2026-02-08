@@ -17,6 +17,7 @@ import subprocess
 import tempfile
 import os
 import sys
+import re
 from pathlib import Path
 
 # Configuration
@@ -73,9 +74,29 @@ def validate_mesh_admesh(stl_path: Path) -> dict:
             )
             output = result.stdout + result.stderr
 
-        # Parse key metrics
-        is_manifold = "0 edges fixed" in output or "edges fixed" not in output
-        has_degenerate = "degenerate" in output.lower() and "0 degenerate" not in output
+        # Parse key metrics from admesh output across output-format variants.
+        lower = output.lower()
+        edges_fixed = None
+        degenerate_count = None
+
+        edges_match = re.search(r"(\d+)\s+edges?\s+fixed", lower)
+        if edges_match:
+            edges_fixed = int(edges_match.group(1))
+        else:
+            edges_match_alt = re.search(r"edges?\s+fixed[^0-9]*(\d+)", lower)
+            if edges_match_alt:
+                edges_fixed = int(edges_match_alt.group(1))
+
+        degenerate_match = re.search(r"(\d+)\s+degenerate", lower)
+        if degenerate_match:
+            degenerate_count = int(degenerate_match.group(1))
+        else:
+            degenerate_match_alt = re.search(r"degenerate[^0-9]*(\d+)", lower)
+            if degenerate_match_alt:
+                degenerate_count = int(degenerate_match_alt.group(1))
+
+        is_manifold = True if edges_fixed is None else edges_fixed == 0
+        has_degenerate = False if degenerate_count is None else degenerate_count > 0
 
         return {
             "tool": "admesh",
@@ -83,6 +104,8 @@ def validate_mesh_admesh(stl_path: Path) -> dict:
             "available": True,
             "manifold": is_manifold,
             "degenerate": has_degenerate,
+            "edges_fixed": edges_fixed,
+            "degenerate_count": degenerate_count,
             "valid": is_manifold and not has_degenerate,
             "output": output[:500],
         }

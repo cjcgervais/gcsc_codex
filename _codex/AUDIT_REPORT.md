@@ -1289,3 +1289,7 @@ Remediations:
 - Added `scipy==1.14.1` to `requirements-dev.txt`.
 - Hardened mesh-validation workflow `admesh` calls to support both CLI variants (`admesh --check` when available, otherwise `admesh`).
 - Updated `tests/test_mesh_validation.py` to gracefully fallback to `admesh <file>` when `--check` is unsupported.
+
+Follow-up adjustments:
+- Updated mesh/provenance workflow loops to scan committed STLs only (prevents false failures on CI-generated `hull_v7_test.stl`).
+- Hardened admesh fixture parsing in `tests/test_mesh_validation.py` using numeric regex extraction for `edges fixed` and `degenerate` counts across output variants.
