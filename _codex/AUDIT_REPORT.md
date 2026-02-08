@@ -1275,3 +1275,17 @@ Results:
   - `artifacts/stl/gcsc_default.stl.provenance.json`
   - `artifacts/3mf/gcsc_default.3mf.provenance.json`
 - `origin/main` currently has zero GitHub Actions workflows discoverable via API (`total_count=0`), so cross-platform CI cannot be remotely dispatched until workflow files are pushed upstream.
+
+## 2026-02-08 - CI Trigger and Failure Triage (Post Push)
+
+Scope:
+- Pushed workflow/tooling stack to `main`, triggered governance CI, and triaged first failing run.
+
+Observed failure causes:
+- `verify_reference_fit.py` failed in CI due missing `scipy` (`ModuleNotFoundError: No module named 'scipy'`) needed by `trimesh.proximity.signed_distance`.
+- Mesh validation job failed because runner `admesh` variant does not support `--check` flag.
+
+Remediations:
+- Added `scipy==1.14.1` to `requirements-dev.txt`.
+- Hardened mesh-validation workflow `admesh` calls to support both CLI variants (`admesh --check` when available, otherwise `admesh`).
+- Updated `tests/test_mesh_validation.py` to gracefully fallback to `admesh <file>` when `--check` is unsupported.

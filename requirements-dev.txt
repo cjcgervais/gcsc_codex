@@ -5,6 +5,7 @@
 # Pin exact version to ensure faces/vertices counts are stable across environments
 trimesh==4.4.1
 rtree==1.4.1
+scipy==1.14.1
 
 # MCP server
 fastmcp>=0.1.0

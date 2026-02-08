@@ -144,6 +144,7 @@ jobs:
 
       - name: Export and validate Phase 2 hull STL
         run: |
+          set -euo pipefail
           echo "=== Exporting Phase 2 hull ==="
           cd 02_Production_BOSL2
 
@@ -160,10 +161,15 @@ jobs:
 
           # Validate mesh with admesh (P1 mesh validation)
           echo "=== Mesh validation with admesh ==="
-          admesh --check hull_v7_test.stl
+          if admesh --help 2>&1 | grep -q -- "--check"; then
+            ADMESH_CMD=(admesh --check)
+          else
+            ADMESH_CMD=(admesh)
+          fi
+          "${ADMESH_CMD[@]}" hull_v7_test.stl
 
           # Check for manifold issues (P0 governance: BLOCK on non-manifold)
-          output=$(admesh --check hull_v7_test.stl 2>&1)
+          output=$("${ADMESH_CMD[@]}" hull_v7_test.stl 2>&1)
           if echo "$output" | grep -q "edges fixed"; then
             edges_fixed=$(echo "$output" | grep "edges fixed" | grep -oP '\d+(?= edges fixed)')
             if [ "$edges_fixed" != "0" ]; then
@@ -177,6 +183,7 @@ jobs:
 
       - name: Check golden metrics (determinism signature)
         run: |
+          set -euo pipefail
           echo "=== Checking golden metrics for flagship hull ==="
           cd 02_Production_BOSL2
 
@@ -187,7 +194,12 @@ jobs:
           fi
 
           # Get current mesh metrics using admesh
-          output=$(admesh --check hull_v7_test.stl 2>&1)
+          if admesh --help 2>&1 | grep -q -- "--check"; then
+            ADMESH_CMD=(admesh --check)
+          else
+            ADMESH_CMD=(admesh)
+          fi
+          output=$("${ADMESH_CMD[@]}" hull_v7_test.stl 2>&1)
           facets=$(echo "$output" | grep -oP '\d+(?= facets)' | head -1 || echo "0")
           edges_fixed=$(echo "$output" | grep -oP '\d+(?= edges fixed)' || echo "0")
 
@@ -261,9 +273,16 @@ jobs:
 
       - name: Validate ALL committed STLs
         run: |
+          set -euo pipefail
           echo "=== Validating ALL committed STL files ==="
           failed=0
           total=0
+
+          if admesh --help 2>&1 | grep -q -- "--check"; then
+            ADMESH_CMD=(admesh --check)
+          else
+            ADMESH_CMD=(admesh)
+          fi
 
           # Find all STL files (excluding BOSL2 library and test fixtures)
           for stl in $(find . -name "*.stl" \
@@ -283,7 +302,7 @@ jobs:
             fi
 
             # Validate with admesh
-            output=$(admesh --check "$stl" 2>&1)
+            output=$("${ADMESH_CMD[@]}" "$stl" 2>&1)
             echo "$output" | head -10
 
             # Check for non-manifold

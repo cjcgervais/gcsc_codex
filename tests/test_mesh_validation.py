@@ -59,11 +59,19 @@ def export_stl(scad_path: Path, stl_path: Path) -> bool:
 def validate_mesh_admesh(stl_path: Path) -> dict:
     """Validate mesh using admesh."""
     try:
+        command = ["admesh", "--check", str(stl_path)]
         result = subprocess.run(
-            ["admesh", "--check", str(stl_path)],
+            command,
             capture_output=True, text=True, timeout=60
         )
         output = result.stdout + result.stderr
+        if result.returncode != 0 and "unrecognized option '--check'" in output:
+            command = ["admesh", str(stl_path)]
+            result = subprocess.run(
+                command,
+                capture_output=True, text=True, timeout=60
+            )
+            output = result.stdout + result.stderr
 
         # Parse key metrics
         is_manifold = "0 edges fixed" in output or "edges fixed" not in output
@@ -71,6 +79,7 @@ def validate_mesh_admesh(stl_path: Path) -> dict:
 
         return {
             "tool": "admesh",
+            "command": command,
             "available": True,
             "manifold": is_manifold,
             "degenerate": has_degenerate,
