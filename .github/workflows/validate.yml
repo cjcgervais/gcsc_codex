@@ -83,9 +83,14 @@ jobs:
 
       - name: Install OpenSCAD
         run: |
-          sudo add-apt-repository -y ppa:openscad/releases
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y openscad
+          sudo apt-get install -y software-properties-common
+          if ! sudo apt-get install -y openscad; then
+            sudo add-apt-repository -y ppa:openscad/releases
+            sudo apt-get update
+            sudo apt-get install -y openscad
+          fi
 
       - name: Syntax check Phase 1 files
         run: |
@@ -123,9 +128,15 @@ jobs:
 
       - name: Install OpenSCAD and admesh
         run: |
-          sudo add-apt-repository -y ppa:openscad/releases
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y openscad admesh
+          sudo apt-get install -y software-properties-common
+          if ! sudo apt-get install -y openscad; then
+            sudo add-apt-repository -y ppa:openscad/releases
+            sudo apt-get update
+            sudo apt-get install -y openscad
+          fi
+          sudo apt-get install -y admesh
 
       - name: Install pinned Python dependencies
         run: |
@@ -352,9 +363,14 @@ jobs:
 
       - name: Install OpenSCAD
         run: |
-          sudo add-apt-repository -y ppa:openscad/releases
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y openscad
+          sudo apt-get install -y software-properties-common
+          if ! sudo apt-get install -y openscad; then
+            sudo add-apt-repository -y ppa:openscad/releases
+            sudo apt-get update
+            sudo apt-get install -y openscad
+          fi
 
       - name: Install pinned Python dependencies
         run: |
@@ -462,9 +478,14 @@ jobs:
       - name: Install OpenSCAD (Ubuntu)
         if: runner.os == 'Linux'
         run: |
-          sudo add-apt-repository -y ppa:openscad/releases
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y openscad
+          sudo apt-get install -y software-properties-common
+          if ! sudo apt-get install -y openscad; then
+            sudo add-apt-repository -y ppa:openscad/releases
+            sudo apt-get update
+            sudo apt-get install -y openscad
+          fi
 
       - name: Install OpenSCAD (Windows)
         if: runner.os == 'Windows'
@@ -505,13 +526,10 @@ jobs:
           PY
 
       - name: Run cross-platform quick validation command
+        shell: bash
         run: |
           echo "=== Running cross-platform quick validation on ${{ runner.os }} ==="
-          python codex_hull_lab/tools/validate_full.py \
-            --project-root . \
-            --quick \
-            --no-subcommand-fail-fast \
-            --output-json _codex/reports/full_validation_report_${{ runner.os }}.json
+          python codex_hull_lab/tools/validate_full.py --project-root . --quick --no-subcommand-fail-fast --output-json "_codex/reports/full_validation_report_${{ runner.os }}.json"
 
       - name: Enforce signature drift policy and print drift details
         if: always()
