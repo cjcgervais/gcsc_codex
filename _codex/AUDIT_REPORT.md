@@ -875,3 +875,403 @@ Export:
 
 - `_codex/validate_entry_20260207_anchor_zminus8_cli.stl`
   - generated with STL export path only (`-o`, no `--render` flag).
+
+## 29) 2026-02-08 Orchestration Readiness Implementation (Steps 1-3)
+
+Objective:
+
+- Complete the immediate blockers and baseline substrate needed before
+  implementing a multi-agent orchestration layer.
+
+Implementation:
+
+- Blocker remediation:
+  - Removed hardcoded repo root from `.mcp.json` (`GCSC_PROJECT_ROOT` no longer
+    pinned).
+  - Added repo-relative root discovery fallback in:
+    - `scripts/openscad_mcp_server.py`
+    - `.claude/hooks/check-scad-syntax.py`
+    - `.claude/hooks/enforce-verification.py`
+    - `.claude/hooks/orchestration-governance.py`
+  - Converted non-ASCII pass/fail output to ASCII in:
+    - `.claude/hooks/mesh-integrity-check.py`
+    - `tests/test_mesh_validation.py`
+  - Rewrote `scripts/insert_article_0.py` to use repo-relative paths and optional
+    `--repo-root`.
+
+- Orchestration substrate:
+  - Added runtime package:
+    - `scripts/orchestration/__init__.py`
+    - `scripts/orchestration/runtime.py`
+  - Added JSON schemas:
+    - `scripts/orchestration/schemas/message.schema.json`
+    - `scripts/orchestration/schemas/state.schema.json`
+  - Runtime provides:
+    - message contract/state validation
+    - append-only event log with lock + monotonic sequence IDs
+    - deterministic replay and materialized session state
+    - CLI for session/task/gate/agent/message/note/replay/validate operations
+  - Integrated `.claude/hooks/orchestration-governance.py` with runtime (advisory
+    behavior preserved; structured events written best-effort).
+
+- CI and tests:
+  - Updated `.github/workflows/validate.yml`:
+    - broadened trigger paths for scripts/tests/runtime-related files
+    - added `orchestration-runtime` job
+    - added orchestration job to governance summary gate
+    - normalized provenance step output to ASCII (`PASS`/`FAIL`)
+  - Added tests:
+    - `tests/test_orchestration_runtime.py`
+    - coverage: message contract validity, deterministic replay, strict sequence
+      monotonicity, state materialization persistence
+  - Fixed runtime determinism bug:
+    - `created_at` now materializes from first event timestamp rather than replay
+      wall-clock time.
+
+Validation:
+
+- `python -m compileall` on modified Python files: pass.
+- `python tests/test_orchestration_runtime.py`: pass (`4/4`).
+- Hook smoke test:
+  - `.claude/hooks/orchestration-governance.py` accepts Task payloads, emits
+    advisory output, and persists runtime events/state under
+    `_codex/orchestration/`.
+- Local `python tests/test_mesh_validation.py` result:
+  - `3 passed, 1 failed` (`open_surface.scad` false-positive under fallback
+    `basic_parser` when authoritative validator is unavailable).
+  - CI job still runs with `admesh` installed; this local result is environment
+    specific.
+
+## 30) 2026-02-08 Post-Session Improvement Plan (Feb 7 Findings)
+
+User request:
+
+- Review `Inbox/Feb_07_Claude_Codex_GCSC.md` and produce an actionable plan to
+  improve the codebase based on observed issues from the last product
+  development session.
+
+Output:
+
+- Authored dated plan note:
+  - `_codex/2026-02-08_Feb07_session_improvement_plan.md`
+
+Plan scope includes:
+
+- deterministic slot/frame/floor mechanical validation in code and CI,
+- profile/parameter controllability improvements for bow/stern and low-profile
+  tuning,
+- governance/hook hardening to prevent session-to-session conceptual drift.
+
+## 31) 2026-02-08 Phase A Implementation: Deterministic Mechanics Validation Gate
+
+Objective:
+
+- Implement Phase A from `_codex/2026-02-08_Feb07_session_improvement_plan.md`:
+  deterministic slot/frame/floor verification + tests + blocking CI job.
+
+Implementation:
+
+- Added deterministic verifier:
+  - `codex_hull_lab/tools/verify_reference_fit.py`
+  - Exports canonical hull/frame/slot-plug STLs (or accepts pre-exported inputs).
+  - Runs geometry-grounded checks using signed distance and ray intersections:
+    - locked slot axis validation around `x=+/-16`, `y=+/-33`,
+    - slot depth target validation (`7.0 mm`),
+    - insertion corridor clearance for `d=7.25` frame ball,
+    - frame-to-hull interference detection in neutral poses at `x=+/-16`,
+    - true frame-bottom to hull-floor clearance (vertical ray probes, not formula-only).
+  - Emits machine-readable JSON report (default `_codex/reports/reference_fit_report.json`).
+
+- Added regression tests:
+  - `tests/test_reference_fit.py`
+  - Verifies passing baseline, slot coverage across all four lock points, and
+    strict-threshold failure behavior for floor clearance gate.
+
+- Added CI blocking job:
+  - `.github/workflows/validate.yml`
+  - New job: `mechanics-validation` (OpenSCAD + pinned Python deps + verifier + tests).
+  - Added job result to `governance-summary` hard gate.
+  - Expanded workflow path trigger coverage to include `codex_hull_lab/**`.
+
+- Dependency update:
+  - `requirements-dev.txt`: added `rtree==1.4.1` (required for deterministic
+    signed-distance and ray-based trimesh queries used by verifier).
+
+- Docs update:
+  - `codex_hull_lab/README.md`: added quick-start command for deterministic
+    mechanical verification.
+
+Observed baseline (current default preset, geometry-grounded):
+
+- Slot radial clearance measured near target (`~0.113 mm` radial minimum).
+- Frame-hull minimum gap measured (`~0.114 mm` minimum sampled gap).
+- True frame-bottom floor clearance measured around `3.0 mm`, materially lower
+  than prior formula-derived claims.
+
+Notes:
+
+- CI floor-clearance gate is configured at `2.0 mm` for current baseline so
+  Phase A can enforce deterministic truth without immediately blocking all
+  builds.
+
+## 32) 2026-02-08 Phase B Implementation: Mechanics-Locked Preset Split + Shape Sensitivity Gate
+
+Objective:
+
+- Implement the requested Phase B slice from
+  `_codex/2026-02-08_Feb07_session_improvement_plan.md`:
+  - mechanics-locked preset split
+  - deterministic shape-sensitivity verification and regression tests
+  - CI gating updates
+
+Implementation:
+
+- Preset architecture split:
+  - Added `codex_hull_lab/presets/gcsc_mechanics_locked.scad` as the functional
+    baseline for dimensions, slot/frame/floor controls, and feature toggles.
+  - Refactored style presets to include the mechanics base and override profile
+    controls only:
+    - `codex_hull_lab/presets/gcsc_default.scad`
+    - `codex_hull_lab/presets/gcsc_fast_print.scad`
+    - `codex_hull_lab/presets/gcsc_high_stability.scad`
+    - `codex_hull_lab/presets/gcsc_experiment.scad`
+
+- Profile controllability improvements:
+  - Updated `codex_hull_lab/src/gcsc_hull_profiles.scad`:
+    - corrected bow/stern ramp mapping so `curvature_bow` affects bow-side
+      response and `curvature_stern` affects stern-side response.
+    - exposed explicit measurement functions for deterministic testing:
+      - tip half-beam
+      - tip top-half-beam
+      - taper response
+    - added blend controls:
+      - `midship_plateau_blend`
+      - `midship_plateau_end_blend`
+    - used center-to-end blend transition to preserve slot-zone/frame clearance
+      while restoring measurable end sensitivity.
+
+- Deterministic sensitivity verifier + tests:
+  - Added `codex_hull_lab/tools/verify_shape_sensitivity.py`:
+    - evaluates baseline + probe variants via OpenSCAD metric echoes
+    - enforces minimum geometric deltas for:
+      - bow curvature response
+      - stern curvature response
+      - gunwale tip-merge response
+    - writes JSON report (default:
+      `_codex/reports/shape_sensitivity_report.json`).
+  - Added `tests/test_shape_sensitivity.py`:
+    - validates mechanics/style preset split contract
+    - validates verifier baseline pass
+    - validates strict-threshold failure behavior (blocking semantics).
+
+- CI gate update:
+  - Updated `.github/workflows/validate.yml` (`mechanics-validation` job):
+    - added blocking run of `verify_shape_sensitivity.py`
+    - added `tests/test_shape_sensitivity.py`
+
+- Determinism hardening follow-up:
+  - Updated `codex_hull_lab/tools/verify_reference_fit.py` so fresh OpenSCAD
+    exports are the default behavior (avoids stale STL false passes).
+  - Added explicit opt-in reuse mode:
+    - `--reuse-exported-stls`
+
+- Documentation updates:
+  - `codex_hull_lab/README.md` (new quick-start command + preset layering note)
+  - `codex_hull_lab/docs/PARAMS.md` (preset layering + shape metrics + new blend params)
+  - `codex_hull_lab/docs/ITERATION_LOG.md` (v0.19 entry)
+
+Validation:
+
+- `python codex_hull_lab/tools/verify_reference_fit.py --output-json _codex/reports/reference_fit_report.json --floor-clearance-min-mm 2.0`
+  - PASS
+  - overall min frame gap: `0.11365340133589984 mm`
+  - overall floor clearance: `3.0 mm`
+- `python codex_hull_lab/tools/verify_shape_sensitivity.py --output-json _codex/reports/shape_sensitivity_report.json`
+  - PASS
+  - bow tip half-beam delta: `0.4091 mm`
+  - stern tip half-beam delta: `0.3943 mm`
+  - gunwale min tip top-half-beam delta: `0.9451 mm`
+- `python tests/test_reference_fit.py`
+  - `4/4` OK
+- `python tests/test_shape_sensitivity.py`
+  - `5/5` OK
+- `python -m compileall codex_hull_lab/tools/verify_reference_fit.py codex_hull_lab/tools/verify_shape_sensitivity.py tests/test_reference_fit.py tests/test_shape_sensitivity.py`
+  - PASS
+- OpenSCAD profile validation loop:
+  - `codex_hull_lab/tests/render_test.scad` compiled to
+    `_codex/reports/phaseb_render_test.csg`
+  - `codex_hull_lab/tests/parameter_sweep.scad` compiled to
+    `_codex/reports/phaseb_parameter_sweep.csg`
+
+## 33) 2026-02-08 Phase C Implementation: Governance + Session Memory Hardening
+
+Objective:
+
+- Implement Phase C from `_codex/2026-02-08_Feb07_session_improvement_plan.md`:
+  - slot mechanism acceptance spec
+  - deterministic mechanics-backed hook hardening
+  - inherited-note provenance reconciliation for floor-clearance claims
+
+Implementation:
+
+- Added canonical acceptance specification:
+  - `codex_hull_lab/docs/SLOT_MECHANISM_ACCEPTANCE.md`
+  - defines slot-mechanism non-negotiables, deterministic tolerances, required
+    artifacts, and hard-fail conditions.
+
+- Hardened governance hook behavior:
+  - `.claude/hooks/functional-requirements-check.py`
+  - expanded watched scope to include `codex_hull_lab/` geometry paths.
+  - added deterministic report ingestion from:
+    - `_codex/reports/reference_fit_report.json` (or env override)
+  - retained regex-based FR advisories/criticals.
+  - added hard-block criticals when deterministic gates fail:
+    - `slot_insertion_corridor`
+    - `frame_interference`
+    - `frame_floor_clearance`
+  - report freshness guard added to avoid stale-report false blocks:
+    - report must be recent
+    - report must not predate edited file
+    - report root must match current repo root.
+
+- Added regression coverage for hook hardening:
+  - `tests/test_functional_requirements_hook.py`
+  - validates:
+    - block on each required deterministic gate failure
+    - fail-open behavior for stale reports.
+
+- Reconciled inherited floor-clearance claim provenance:
+  - `codex_hull_lab/Inheritable_Dimensions/Final_GCSC_Assembly.md`
+  - appended historical annotation clarifying:
+    - `PASS (11mm)` remains historical claim context
+    - active governance truth uses deterministic report values
+      (current measured baseline `3.0 mm`, CI threshold `2.0 mm`).
+
+- Documentation links and iteration trace:
+  - `codex_hull_lab/README.md`:
+    - added quick-start pointer to `docs/SLOT_MECHANISM_ACCEPTANCE.md`
+    - linked slot acceptance spec under governance notes.
+  - `codex_hull_lab/docs/ITERATION_LOG.md`:
+    - added `v0.20` Phase C entry.
+
+Validation:
+
+- `python -m compileall .claude/hooks/functional-requirements-check.py tests/test_functional_requirements_hook.py`
+  - PASS
+- `python tests/test_functional_requirements_hook.py`
+  - PASS
+- `python tests/test_reference_fit.py`
+  - PASS
+- `python tests/test_shape_sensitivity.py`
+  - PASS
+
+## 2026-02-08 - Full Validation Unification and Release/Hygiene Automation
+
+Scope:
+- Added single-source validation orchestration for codex_hull_lab and wired CI to consume it.
+- Added deterministic robustness sweep, swing-path kinematics, manufacturability gates, and golden signatures.
+- Added release bundle automation and hygiene maintenance routine.
+
+Primary changes:
+- Added `codex_hull_lab/tools/validate_full.py`.
+- Added `codex_hull_lab/reference/golden_geometry_signatures.json`.
+- Added `codex_hull_lab/tools/package_release.py`.
+- Added `codex_hull_lab/tools/hygiene_maintenance.py`.
+- Updated `.github/workflows/validate.yml` to run authoritative full validator and upload `_codex/reports/*.json`.
+- Updated `codex_hull_lab/README.md` and `codex_hull_lab/docs/SLOT_MECHANISM_ACCEPTANCE.md` to reflect unified command.
+
+Validation evidence:
+- `python codex_hull_lab/tools/validate_full.py --project-root . --output-json _codex/reports/full_validation_report.json --write-signature-baseline --no-subcommand-fail-fast` -> PASS.
+- `python codex_hull_lab/tools/package_release.py --project-root . --version vsmoke-package --presets gcsc_default --skip-validation --overwrite` -> PASS.
+- `python codex_hull_lab/tools/hygiene_maintenance.py --project-root . --dry-run` -> PASS.
+
+Notes:
+- Robustness perturbation set intentionally uses bounded non-breaking perturbations (`slot_entry_relief_plus_0p60`, `floor_plus_0p80`) and hard-fails if slot corridor / frame interference / floor-clearance gates break.
+- Golden signature drift now requires explicit override (`--allow-signature-drift` or `GCSC_ALLOW_SIGNATURE_DRIFT=1`).
+
+## 2026-02-08 - validate_full Quick Mode + Sweep Config + Tooling Unit Tests
+
+Scope:
+- Implemented priority improvements 1-4 for validation/runtime iteration speed and governance visibility.
+
+Primary changes:
+- Updated `codex_hull_lab/tools/validate_full.py`:
+  - Added `--quick` fast-loop mode (reduced command suite).
+  - Added config-driven sweep loading via `--sweep-config` and `--sweep-profile`.
+  - Added STL cache reuse across sweep scenarios (shared cached frame/slot-plug + cached hull exports).
+  - Kept signature drift policy explicit override (`--allow-signature-drift` / `GCSC_ALLOW_SIGNATURE_DRIFT`).
+- Added `codex_hull_lab/reference/validation_sweep_config.json` as governance-reviewable sweep profile source.
+- Added dedicated tool tests:
+  - `tests/test_validate_full.py`
+  - `tests/test_package_release.py`
+  - `tests/test_hygiene_maintenance.py`
+
+Validation evidence:
+- `python -m py_compile codex_hull_lab/tools/validate_full.py codex_hull_lab/tools/package_release.py codex_hull_lab/tools/hygiene_maintenance.py tests/test_validate_full.py tests/test_package_release.py tests/test_hygiene_maintenance.py` -> PASS.
+- `python tests/test_validate_full.py` -> PASS (4 tests).
+- `python tests/test_package_release.py` -> PASS (2 tests).
+- `python tests/test_hygiene_maintenance.py` -> PASS (3 tests).
+- `python codex_hull_lab/tools/validate_full.py --help` -> PASS (CLI wiring verified for new flags).
+
+## 2026-02-08 - Priority Items 5-8: Signature Drift Policy, Cross-Platform CI, Thickness Probes, Scheduled Hygiene
+
+Scope:
+- Implemented priorities 5-8 to harden CI policy clarity, platform coverage, manufacturability robustness, and hygiene automation.
+
+Primary changes:
+- Updated `codex_hull_lab/tools/validate_full.py`:
+  - Added explicit signature-drift policy reporting shape:
+    - `policy` object in `golden_geometry_signatures` with default action, override source (`cli`/`env`/`none`), and blocking state.
+    - `drifted_metrics_by_preset` for concise per-preset metric drift logging.
+  - Added deterministic sampled local-thickness probes in manufacturability validation:
+    - New CLI controls:
+      - `--wall-thickness-probe-count`
+      - `--wall-thickness-probe-min-valid`
+      - `--wall-thickness-probe-percentile`
+      - `--wall-thickness-probe-noise-floor-mm`
+    - New manufacturability gate: `sampled_local_wall_thickness`.
+    - Probe diagnostics are now emitted in report measurements under `sampled_local_thickness_probes`.
+  - Enhanced terminal summary output to include signature drift details and override policy context.
+- Updated `.github/workflows/validate.yml`:
+  - Added explicit post-validation CI policy step to enforce/report signature drift details.
+  - Added cross-platform validate job matrix (`ubuntu-latest` + `windows-latest`) running `validate_full.py --quick`.
+  - Wired governance summary to include cross-platform mechanics gate.
+- Added scheduled hygiene workflow:
+  - New `.github/workflows/hygiene_maintenance.yml`.
+  - Runs `codex_hull_lab/tools/hygiene_maintenance.py --dry-run` on nightly + weekly schedule and uploads JSON artifact.
+- Expanded `tests/test_validate_full.py`:
+  - Added signature policy regression test (block without override, pass with `GCSC_ALLOW_SIGNATURE_DRIFT=1`).
+  - Added manufacturability regression test for sampled local-thickness gate behavior.
+
+## 2026-02-08 - Golden Signature Rebaseline (Post Policy Hardening)
+
+Scope:
+- Refreshed canonical golden geometry signatures to match current approved geometry and new full sweep baseline set.
+
+Execution:
+- `python codex_hull_lab/tools/validate_full.py --project-root . --quick --sweep-profile full --write-signature-baseline --output-json _codex/reports/full_validation_report_signature_rebaseline.json` -> PASS.
+
+Results:
+- Updated `codex_hull_lab/reference/golden_geometry_signatures.json` with fresh timestamp and metrics for:
+  - `gcsc_default`
+  - `gcsc_fast_print`
+  - `gcsc_high_stability`
+  - `gcsc_experiment`
+- Validation report confirms no missing presets and zero drift entries post-rebaseline (`raw_pass=true`).
+
+## 2026-02-08 - Release Smoke (Validation Enabled) + CI Triggerability Check
+
+Scope:
+- Executed requested release smoke with full validation enabled.
+- Checked ability to trigger cross-platform CI remotely from current workspace/repo state.
+
+Execution:
+- `python codex_hull_lab/tools/package_release.py --project-root . --version vsmoke-validate-20260208 --presets gcsc_default --overwrite` -> PASS.
+
+Results:
+- Release bundle created at `_codex/releases/vsmoke-validate-20260208`.
+- Manifest reports `pass=true` and `validation.pass=true`.
+- Provenance sidecars generated for both smoke artifacts:
+  - `artifacts/stl/gcsc_default.stl.provenance.json`
+  - `artifacts/3mf/gcsc_default.3mf.provenance.json`
+- `origin/main` currently has zero GitHub Actions workflows discoverable via API (`total_count=0`), so cross-platform CI cannot be remotely dispatched until workflow files are pushed upstream.

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GCSC2 Orchestration Message Contract",
+  "type": "object",
+  "required": ["id", "type", "from", "to", "payload"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "dispatch",
+        "work_submission",
+        "verification_result",
+        "build_request",
+        "build_report",
+        "research_request",
+        "research_report",
+        "approval_request",
+        "approval_decision",
+        "failure_report",
+        "human_review_required"
+      ]
+    },
+    "from": {
+      "type": "string",
+      "minLength": 1
+    },
+    "to": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": true
+}
+

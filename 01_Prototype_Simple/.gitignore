@@ -1,0 +1,15 @@
+# GCSC2 Build Outputs - Phase 1 Minimalist Prototype
+# These files are regenerated from source .scad files
+
+# STL Exports
+STL_Exports/*.stl
+
+# Render Images
+renders/*.png
+
+# Backup files
+*.bak
+*~
+
+# OpenSCAD temporary files
+.scad-deps

@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "updated_utc": "2026-02-08T00:00:00Z",
+  "description": "Governance-reviewed sweep presets and perturbations for codex_hull_lab/tools/validate_full.py",
+  "profiles": {
+    "full": {
+      "presets": [
+        "gcsc_default",
+        "gcsc_fast_print",
+        "gcsc_high_stability",
+        "gcsc_experiment"
+      ],
+      "perturbations": [
+        {
+          "name": "slot_entry_relief_plus_0p60",
+          "overrides": {
+            "slot_entry_relief_mm": 1.8
+          }
+        },
+        {
+          "name": "floor_plus_0p80",
+          "overrides": {
+            "floor_mm": 10.8
+          }
+        }
+      ]
+    },
+    "quick": {
+      "presets": [
+        "gcsc_default"
+      ],
+      "perturbations": []
+    }
+  }
+}

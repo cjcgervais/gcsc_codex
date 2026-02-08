@@ -1,0 +1,34 @@
+{
+  "description": "Expected mesh metrics for golden fixtures",
+  "note": "These are the expected validation results for each fixture file",
+  "good": {
+    "simple_cube.scad": {
+      "expected_valid": true,
+      "watertight": true,
+      "is_volume": true,
+      "euler_number": 2,
+      "facets_range": [10, 20],
+      "description": "Simple 20x20x20 cube - always manifold"
+    },
+    "hull_reference.scad": {
+      "expected_valid": true,
+      "watertight": true,
+      "is_volume": true,
+      "euler_number": 2,
+      "facets_range": [500, 2000],
+      "description": "Convex hull of spheres - always manifold"
+    }
+  },
+  "bad": {
+    "open_surface.scad": {
+      "expected_valid": false,
+      "watertight": false,
+      "description": "Intentionally non-manifold open surface"
+    },
+    "zero_volume.scad": {
+      "expected_valid": false,
+      "is_volume": false,
+      "description": "Intentionally degenerate zero-height extrusion"
+    }
+  }
+}

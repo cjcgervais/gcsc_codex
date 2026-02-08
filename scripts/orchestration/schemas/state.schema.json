@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GCSC2 Orchestration Session State",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "session_id",
+    "initiated_by",
+    "created_at",
+    "updated_at",
+    "tasks",
+    "gates",
+    "agents",
+    "messages",
+    "notes"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "initiated_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string"
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "agents": {
+      "type": "object"
+    },
+    "messages": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": true
+}
+

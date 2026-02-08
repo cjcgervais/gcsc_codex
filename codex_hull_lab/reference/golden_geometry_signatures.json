@@ -1,0 +1,103 @@
+{
+  "schema_version": "1.0",
+  "updated_utc": "2026-02-08T07:43:32.289876+00:00",
+  "description": "Approved codex_hull_lab geometry signatures. Intentional drifts require explicit override.",
+  "presets": {
+    "gcsc_default": {
+      "metrics": {
+        "extent_x_mm": {
+          "min": 148.2048,
+          "max": 149.2048
+        },
+        "extent_y_mm": {
+          "min": 79.0,
+          "max": 80.0
+        },
+        "extent_z_mm": {
+          "min": 60.9,
+          "max": 61.9
+        },
+        "volume_mm3": {
+          "min": 225118.8756272787,
+          "max": 239043.75453205884
+        },
+        "surface_area_mm2": {
+          "min": 36295.023826722994,
+          "max": 38540.076846932665
+        }
+      }
+    },
+    "gcsc_fast_print": {
+      "metrics": {
+        "extent_x_mm": {
+          "min": 148.461,
+          "max": 149.461
+        },
+        "extent_y_mm": {
+          "min": 79.0,
+          "max": 80.0
+        },
+        "extent_z_mm": {
+          "min": 55.94,
+          "max": 56.94
+        },
+        "volume_mm3": {
+          "min": 243588.5131203615,
+          "max": 258655.84382883745
+        },
+        "surface_area_mm2": {
+          "min": 37636.34070944245,
+          "max": 39964.36178425331
+        }
+      }
+    },
+    "gcsc_high_stability": {
+      "metrics": {
+        "extent_x_mm": {
+          "min": 148.1218,
+          "max": 149.1218
+        },
+        "extent_y_mm": {
+          "min": 79.0,
+          "max": 80.0
+        },
+        "extent_z_mm": {
+          "min": 58.04,
+          "max": 59.04
+        },
+        "volume_mm3": {
+          "min": 253540.5190258199,
+          "max": 269223.43772844796
+        },
+        "surface_area_mm2": {
+          "min": 38518.14368817511,
+          "max": 40900.709277134396
+        }
+      }
+    },
+    "gcsc_experiment": {
+      "metrics": {
+        "extent_x_mm": {
+          "min": 148.1218,
+          "max": 149.1218
+        },
+        "extent_y_mm": {
+          "min": 79.0,
+          "max": 80.0
+        },
+        "extent_z_mm": {
+          "min": 58.54,
+          "max": 59.54
+        },
+        "volume_mm3": {
+          "min": 251796.67143150658,
+          "max": 267371.7232726307
+        },
+        "surface_area_mm2": {
+          "min": 38291.62778010678,
+          "max": 40660.18207578348
+        }
+      }
+    }
+  }
+}

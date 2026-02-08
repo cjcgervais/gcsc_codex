@@ -448,3 +448,135 @@ Validation summary (default entry build):
 Export artifact:
 
 - `_codex/validate_entry_20260207_anchor_zminus8_cli.stl`
+
+### v0.19 - Phase B: Mechanics-Locked Presets + Shape Sensitivity Gate
+
+- Added mechanics/style preset split:
+  - new baseline preset `presets/gcsc_mechanics_locked.scad`
+  - style presets now include the mechanics baseline and override profile controls only:
+    - `presets/gcsc_default.scad`
+    - `presets/gcsc_fast_print.scad`
+    - `presets/gcsc_high_stability.scad`
+    - `presets/gcsc_experiment.scad`
+- Updated profile controls for predictable end-response:
+  - corrected bow/stern curvature mapping so bow controls bow-side response and stern controls stern-side response
+  - exposed deterministic measurement helpers in `src/gcsc_hull_profiles.scad`:
+    - tip half-beam, tip top-half-beam, and taper response metrics
+  - added `midship_plateau_blend` and `midship_plateau_end_blend` controls to keep slot-zone width stable while preserving end sensitivity
+- Added deterministic sensitivity verifier:
+  - `tools/verify_shape_sensitivity.py`
+  - checks measurable response for:
+    - `curvature_bow`
+    - `curvature_stern`
+    - `gunwale_tip_merge_ratio`
+  - writes JSON report under `_codex/reports/`
+- Added regression suite:
+  - `tests/test_shape_sensitivity.py`
+  - enforces mechanics-locked preset split and sensitivity gate behavior
+- Reliability fix:
+  - `tools/verify_reference_fit.py` now exports fresh geometry by default
+  - optional reuse path is explicit via `--reuse-exported-stls`
+
+Validation summary:
+
+- `python codex_hull_lab/tools/verify_reference_fit.py --output-json _codex/reports/reference_fit_report.json --floor-clearance-min-mm 2.0`
+  - PASS
+  - min frame gap: `0.11365340133589984 mm`
+  - floor clearance: `3.0 mm`
+- `python codex_hull_lab/tools/verify_shape_sensitivity.py --output-json _codex/reports/shape_sensitivity_report.json`
+  - PASS
+  - bow delta: `0.4091 mm`
+  - stern delta: `0.3943 mm`
+  - gunwale min top-half delta: `0.9451 mm`
+- `python tests/test_reference_fit.py`
+  - `4/4` OK
+- `python tests/test_shape_sensitivity.py`
+  - `5/5` OK
+- OpenSCAD profile validation:
+  - `codex_hull_lab/tests/render_test.scad` compiled to `_codex/reports/phaseb_render_test.csg`
+  - `codex_hull_lab/tests/parameter_sweep.scad` compiled to `_codex/reports/phaseb_parameter_sweep.csg`
+
+### v0.20 - Phase C: Governance + Session Memory Hardening
+
+- Added canonical slot acceptance specification:
+  - `docs/SLOT_MECHANISM_ACCEPTANCE.md`
+  - codifies non-negotiable slot behavior, deterministic tolerances, and required artifacts.
+- Hardened governance hook behavior:
+  - `.claude/hooks/functional-requirements-check.py` now consumes deterministic mechanics output when available and fresh.
+  - hard-block conditions added for:
+    - `slot_insertion_corridor = false`
+    - `frame_interference = false`
+    - `frame_floor_clearance = false`
+  - legacy regex checks remain in place for advisory and critical pattern detection.
+- Reconciled historical compatibility claim provenance:
+  - annotated `Inheritable_Dimensions/Final_GCSC_Assembly.md` to mark `PASS (11mm)` floor-clearance text as historical and superseded by deterministic geometry-grounded measurements.
+- Added governance regression coverage:
+  - `tests/test_functional_requirements_hook.py`
+  - verifies mechanics-report-driven hard blocking and stale-report fail-open behavior.
+
+### v0.21 - Full Validation Unification + Traceable Release Packaging
+
+- Added authoritative validator:
+  - `codex_hull_lab/tools/validate_full.py`
+  - single command now orchestrates:
+    - `verify_reference_fit.py`
+    - `verify_shape_sensitivity.py`
+    - `tests/test_reference_fit.py`
+    - `tests/test_shape_sensitivity.py`
+    - `tests/test_functional_requirements_hook.py`
+  - emits canonical machine-readable report:
+    - `_codex/reports/full_validation_report.json`
+
+- Added deterministic robustness sweeps:
+  - baseline checks across preset variants:
+    - `gcsc_default`, `gcsc_fast_print`, `gcsc_high_stability`, `gcsc_experiment`
+  - bounded perturbations applied per preset:
+    - `slot_entry_relief_plus_0p60`
+    - `floor_plus_0p80`
+  - sweep hard-fails when any scenario breaks:
+    - `slot_insertion_corridor`
+    - `frame_interference`
+    - `frame_floor_clearance`
+
+- Added dynamic kinematic validation:
+  - sampled swing-path collision checks around pivot axis (Y-axis) for both frame placements.
+  - neutral-only checks are now supplemented by angle-sweep interference/gap gates.
+
+- Added manufacturability gates:
+  - minimum wall-thickness estimate
+  - recess skin thickness check
+  - overhang risk ratio
+  - stable contact-footprint area/span checks
+
+- Added golden geometry signatures:
+  - `codex_hull_lab/reference/golden_geometry_signatures.json`
+  - validated by `validate_full.py` for key presets.
+  - drift requires explicit override via:
+    - `--allow-signature-drift` (or `GCSC_ALLOW_SIGNATURE_DRIFT=1`)
+
+- Added release packaging automation:
+  - `codex_hull_lab/tools/package_release.py`
+  - exports STL + 3MF, writes provenance sidecars, copies validation reports, writes release manifest under:
+    - `_codex/releases/<version>/`
+
+- Added long-term hygiene routine:
+  - `codex_hull_lab/tools/hygiene_maintenance.py`
+  - archives stale `_codex/tmp_*` artifacts into `_codex/archive/tmp_cleanup/*`
+  - normalizes mojibake patterns in inherited doc zones.
+
+- CI unification:
+  - `.github/workflows/validate.yml` mechanics job now runs:
+    - `python codex_hull_lab/tools/validate_full.py --project-root . --output-json _codex/reports/full_validation_report.json`
+  - validation JSON artifacts are uploaded on every mechanics job run:
+    - `_codex/reports/*.json`
+
+Validation summary:
+
+- `python codex_hull_lab/tools/validate_full.py --project-root . --output-json _codex/reports/full_validation_report.json --write-signature-baseline --no-subcommand-fail-fast`
+  - PASS
+  - report: `_codex/reports/full_validation_report.json`
+- `python codex_hull_lab/tools/package_release.py --project-root . --version vsmoke-package --presets gcsc_default --skip-validation --overwrite`
+  - PASS
+  - bundle: `_codex/releases/vsmoke-package/`
+- `python codex_hull_lab/tools/hygiene_maintenance.py --project-root . --dry-run`
+  - PASS (no stale tmp files moved in dry-run; no mojibake replacements needed in scanned scope)

@@ -1,0 +1,13 @@
+# GCSC2 Development Dependencies
+# Pin versions for reproducible validation metrics
+
+# Mesh validation (AUTHORITATIVE validator)
+# Pin exact version to ensure faces/vertices counts are stable across environments
+trimesh==4.4.1
+rtree==1.4.1
+
+# MCP server
+fastmcp>=0.1.0
+
+# Optional: admesh fallback (system package, not pip)
+# Install via: apt install admesh (Linux) or brew install admesh (macOS)

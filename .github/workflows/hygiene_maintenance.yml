@@ -1,0 +1,37 @@
+name: Scheduled Hygiene Maintenance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "20 07 * * *"   # Nightly UTC
+    - cron: "35 07 * * 1"   # Weekly Monday UTC
+
+jobs:
+  hygiene-maintenance:
+    name: Hygiene Maintenance Report
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run hygiene maintenance report
+        run: |
+          mkdir -p _codex/reports
+          python codex_hull_lab/tools/hygiene_maintenance.py \
+            --project-root . \
+            --dry-run > _codex/reports/hygiene_maintenance_report.json
+          echo "Hygiene report written to _codex/reports/hygiene_maintenance_report.json"
+
+      - name: Upload hygiene report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hygiene-maintenance-report-${{ github.run_id }}
+          path: _codex/reports/hygiene_maintenance_report.json
+          if-no-files-found: error

@@ -2,6 +2,12 @@
 
 Units: millimeters unless noted.
 
+## Preset Layering
+
+- `presets/gcsc_mechanics_locked.scad` defines the mechanics-locked baseline.
+- Style presets include that file and only override profile-shaping controls.
+- This keeps slot/frame/floor compatibility controls separated from aesthetic tuning.
+
 ## Locked Interface Invariants
 
 Defined in `src/gcsc_reference_params.scad`:
@@ -22,6 +28,8 @@ Slots are cut with hemispherical termini at all four interface locations.
 - `no_bulge_on` (default `true`; enforces streamlined no-bulge longitudinal width)
 - `flat_bottom_on` (default `true`)
 - `bottom_flat_ratio` (bottom flat-band fraction of section half-beam)
+- `midship_plateau_blend` (0..1, blend between end-curvature envelope and midship-plateau envelope)
+- `midship_plateau_end_blend` (0..1, end-zone blend target used by `midship_plateau_blend`)
 - `gunwale_rise_mm`, `gunwale_curve_exp`
 - `gunwale_tip_merge_start`, `gunwale_tip_merge_exp`, `gunwale_tip_merge_ratio`
   (blends gunwale Y-width into bow/stern tips to avoid horn-like tip shoulders)
@@ -82,3 +90,14 @@ Slots are cut with hemispherical termini at all four interface locations.
 - `enable_rim_reinforcement` (default `false`)
 - `enable_drainage_hole` (default `false`, non-canonical)
 - `enable_flat_cut`, `flat_cut_z`
+
+## Exposed Shape Metrics
+
+Defined in `src/gcsc_hull_profiles.scad` for deterministic sensitivity checks:
+
+- `gcsc_bow_tip_half_beam_mm(inset_mm = 12)`
+- `gcsc_stern_tip_half_beam_mm(inset_mm = 12)`
+- `gcsc_bow_tip_top_half_beam_mm(inset_mm = 12)`
+- `gcsc_stern_tip_top_half_beam_mm(inset_mm = 12)`
+- `gcsc_bow_taper_response_mm(near_inset_mm = 8, far_inset_mm = 24)`
+- `gcsc_stern_taper_response_mm(near_inset_mm = 8, far_inset_mm = 24)`

@@ -34,6 +34,8 @@ p_curvature_stern = gcsc_clamp01(gcsc_safe(curvature_stern, 0.52));
 p_belly_fullness = gcsc_clamp01(gcsc_safe(belly_fullness, 0.58));
 p_midship_plateau_half_fraction = gcsc_clamp(gcsc_safe(midship_plateau_half_fraction, 0.28), 0.12, 0.55);
 p_midship_taper_exponent = max(gcsc_safe(midship_taper_exponent, 1.25), 0.6);
+p_midship_plateau_blend = gcsc_clamp(gcsc_safe(midship_plateau_blend, 1.0), 0.0, 1.0);
+p_midship_plateau_end_blend = gcsc_clamp(gcsc_safe(midship_plateau_end_blend, 0.72), 0.0, 1.0);
 p_rocker = gcsc_clamp01(gcsc_safe(rocker, 0.35));
 p_flat_bottom_on = gcsc_safe(flat_bottom_on, true);
 p_bottom_flat_ratio = gcsc_clamp(gcsc_safe(bottom_flat_ratio, 0.42), 0.20, 0.72);
@@ -76,6 +78,52 @@ function gcsc_reference_slot_seat_z() =
 function gcsc_reference_frame_bottom_z() =
     p_reference_frame_bottom_z_model;
 
+// Metric helpers used by deterministic profile-sensitivity checks.
+function gcsc_profile_t_from_x(x_mm) =
+    gcsc_clamp01(x_mm / p_length_mm + 0.5);
+
+function gcsc_profile_t_from_bow_inset(inset_mm) =
+    gcsc_profile_t_from_x(p_length_mm / 2 - gcsc_clamp(inset_mm, 0, p_length_mm));
+
+function gcsc_profile_t_from_stern_inset(inset_mm) =
+    gcsc_profile_t_from_x(-p_length_mm / 2 + gcsc_clamp(inset_mm, 0, p_length_mm));
+
+function gcsc_profile_half_beam_mm_at_t(t) =
+    gcsc_beam_at(gcsc_clamp01(t)) / 2;
+
+function gcsc_profile_top_half_beam_mm_at_t(t) =
+    gcsc_profile_half_beam_mm_at_t(t) * gcsc_top_half_ratio_at_t(gcsc_clamp01(t));
+
+function gcsc_profile_depth_mm_at_t(t) =
+    gcsc_depth_at(gcsc_clamp01(t));
+
+function gcsc_profile_sheer_mm_at_t(t) =
+    gcsc_gunwale_sheer_at(gcsc_clamp01(t));
+
+function gcsc_bow_tip_half_beam_mm(inset_mm = 12) =
+    gcsc_profile_half_beam_mm_at_t(gcsc_profile_t_from_bow_inset(inset_mm));
+
+function gcsc_stern_tip_half_beam_mm(inset_mm = 12) =
+    gcsc_profile_half_beam_mm_at_t(gcsc_profile_t_from_stern_inset(inset_mm));
+
+function gcsc_bow_tip_top_half_beam_mm(inset_mm = 12) =
+    gcsc_profile_top_half_beam_mm_at_t(gcsc_profile_t_from_bow_inset(inset_mm));
+
+function gcsc_stern_tip_top_half_beam_mm(inset_mm = 12) =
+    gcsc_profile_top_half_beam_mm_at_t(gcsc_profile_t_from_stern_inset(inset_mm));
+
+function gcsc_bow_tip_sheer_mm(inset_mm = 12) =
+    gcsc_profile_sheer_mm_at_t(gcsc_profile_t_from_bow_inset(inset_mm));
+
+function gcsc_stern_tip_sheer_mm(inset_mm = 12) =
+    gcsc_profile_sheer_mm_at_t(gcsc_profile_t_from_stern_inset(inset_mm));
+
+function gcsc_bow_taper_response_mm(near_inset_mm = 8, far_inset_mm = 24) =
+    gcsc_bow_tip_half_beam_mm(far_inset_mm) - gcsc_bow_tip_half_beam_mm(near_inset_mm);
+
+function gcsc_stern_taper_response_mm(near_inset_mm = 8, far_inset_mm = 24) =
+    gcsc_stern_tip_half_beam_mm(far_inset_mm) - gcsc_stern_tip_half_beam_mm(near_inset_mm);
+
 function gcsc_station_t(index, count) =
     count <= 0 ? 0 : index / count;
 
@@ -83,10 +131,10 @@ function gcsc_station_x(t) =
     (t - 0.5) * p_length_mm;
 
 function gcsc_bow_ramp(t) =
-    pow(gcsc_clamp01(2 * t), gcsc_lerp(1.9, 0.65, p_curvature_bow));
+    pow(gcsc_clamp01(2 * (1 - t)), gcsc_lerp(1.9, 0.65, p_curvature_bow));
 
 function gcsc_stern_ramp(t) =
-    pow(gcsc_clamp01(2 * (1 - t)), gcsc_lerp(1.9, 0.65, p_curvature_stern));
+    pow(gcsc_clamp01(2 * t), gcsc_lerp(1.9, 0.65, p_curvature_stern));
 
 function gcsc_longitudinal_envelope_base(t) =
     gcsc_clamp(0.08 + 0.92 * min(gcsc_bow_ramp(t), gcsc_stern_ramp(t)), 0.06, 1.0);
@@ -111,8 +159,18 @@ function gcsc_end_tip_envelope(t) =
     gcsc_lerp(1.0, p_end_tip_min_envelope, w);
 
 function gcsc_longitudinal_envelope(t) =
-    max(gcsc_longitudinal_envelope_base(t), gcsc_midship_plateau_envelope(t))
-    * gcsc_end_tip_envelope(t);
+    let(
+        base = gcsc_longitudinal_envelope_base(t),
+        plateau = gcsc_midship_plateau_envelope(t),
+        axial = abs(2 * t - 1),
+        blend_here = gcsc_lerp(
+            p_midship_plateau_blend,
+            p_midship_plateau_end_blend,
+            gcsc_smoothstep(0.55, 1.0, axial)
+        ),
+        blended = gcsc_lerp(base, max(base, plateau), blend_here)
+    )
+    blended * gcsc_end_tip_envelope(t);
 
 function gcsc_midship_gain() =
     p_no_bulge_on ? 1.0 : gcsc_lerp(0.90, 1.12, p_belly_fullness);

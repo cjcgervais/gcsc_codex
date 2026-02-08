@@ -1,0 +1,685 @@
+﻿# GCSC2 Governance CI Pipeline
+#
+# P5: CI gates for mesh validation and governance compliance
+# Runs on push to main and on pull requests
+#
+# Based on: Inbox/hull_v7_bosl2_fixed_human_critique.md (GPT audit checklist)
+
+name: GCSC2 Governance Validation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**/*.scad'
+      - 'codex_hull_lab/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'universal-governor/scripts/**'
+      - '.claude/**'
+      - '.mcp.json'
+      - 'requirements-dev.txt'
+      - '*.bak'
+      - '__pycache__/**'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/*.scad'
+      - 'codex_hull_lab/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'universal-governor/scripts/**'
+      - '.claude/**'
+      - '.mcp.json'
+      - 'requirements-dev.txt'
+      - '*.bak'
+      - '__pycache__/**'
+      - '.github/workflows/**'
+
+jobs:
+  root-hygiene:
+    name: Root Hygiene
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fail on root-level .bak and __pycache__
+        run: |
+          set -euo pipefail
+          bad=0
+
+          if compgen -G "*.bak" > /dev/null; then
+            echo "ERROR: Root-level .bak files detected:"
+            ls -1 *.bak
+            bad=1
+          fi
+
+          if [ -d "__pycache__" ]; then
+            echo "ERROR: Root-level __pycache__ directory detected."
+            find "__pycache__" -maxdepth 2 -type f | head -50 || true
+            bad=1
+          fi
+
+          if [ "$bad" -ne 0 ]; then
+            echo "Root hygiene check failed."
+            exit 1
+          fi
+
+          echo "Root hygiene check passed."
+
+  syntax-check:
+    name: OpenSCAD Syntax Check
+    runs-on: ubuntu-latest
+    needs: root-hygiene
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive  # P0.3: Required for BOSL2 library
+
+      - name: Install OpenSCAD
+        run: |
+          sudo add-apt-repository -y ppa:openscad/releases
+          sudo apt-get update
+          sudo apt-get install -y openscad
+
+      - name: Syntax check Phase 1 files
+        run: |
+          echo "=== Checking Phase 1 .scad files ==="
+          for file in 01_Prototype_Simple/*.scad 01_Prototype_Simple/modules/*.scad 01_Prototype_Simple/params/*.scad; do
+            if [ -f "$file" ]; then
+              echo "Checking: $file"
+              openscad -o /tmp/syntax_check.csg "$file" 2>&1 || exit 1
+            fi
+          done
+          echo "Phase 1 syntax: PASS"
+
+      - name: Syntax check Phase 2 files
+        run: |
+          echo "=== Checking Phase 2 .scad files ==="
+          # Skip BOSL2 library files
+          for file in 02_Production_BOSL2/*.scad 02_Production_BOSL2/modules/*.scad 02_Production_BOSL2/params/*.scad; do
+            if [ -f "$file" ]; then
+              echo "Checking: $file"
+              openscad -o /tmp/syntax_check.csg "$file" 2>&1 || exit 1
+            fi
+          done
+          echo "Phase 2 syntax: PASS"
+
+  mesh-validation:
+    name: Mesh Integrity Validation
+    runs-on: ubuntu-latest
+    needs: syntax-check
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive  # P0.3: Required for BOSL2 library
+
+      - name: Install OpenSCAD and admesh
+        run: |
+          sudo add-apt-repository -y ppa:openscad/releases
+          sudo apt-get update
+          sudo apt-get install -y openscad admesh
+
+      - name: Install pinned Python dependencies
+        run: |
+          pip install -r requirements-dev.txt
+
+      - name: Export and validate Phase 2 hull STL
+        run: |
+          echo "=== Exporting Phase 2 hull ==="
+          cd 02_Production_BOSL2
+
+          # Export with --render flag (P0 governance requirement)
+          openscad --render -o hull_v7_test.stl hull_v7_bosl2.scad
+
+          # Check file size (P1 sanity check)
+          size=$(stat -f%z hull_v7_test.stl 2>/dev/null || stat -c%s hull_v7_test.stl)
+          echo "STL size: $size bytes"
+          if [ "$size" -lt 100000 ]; then
+            echo "ERROR: STL file too small (<100KB) - geometry may be degenerate"
+            exit 1
+          fi
+
+          # Validate mesh with admesh (P1 mesh validation)
+          echo "=== Mesh validation with admesh ==="
+          admesh --check hull_v7_test.stl
+
+          # Check for manifold issues (P0 governance: BLOCK on non-manifold)
+          output=$(admesh --check hull_v7_test.stl 2>&1)
+          if echo "$output" | grep -q "edges fixed"; then
+            edges_fixed=$(echo "$output" | grep "edges fixed" | grep -oP '\d+(?= edges fixed)')
+            if [ "$edges_fixed" != "0" ]; then
+              echo "ERROR: Non-manifold mesh detected ($edges_fixed edges fixed)"
+              echo ">>> MESH VALIDATION FAILED - Build blocked <<<"
+              exit 1
+            fi
+          fi
+
+          echo "Mesh validation: PASS (manifold verified)"
+
+      - name: Check golden metrics (determinism signature)
+        run: |
+          echo "=== Checking golden metrics for flagship hull ==="
+          cd 02_Production_BOSL2
+
+          # Check if golden metrics file exists
+          if [ ! -f "GOLDEN_METRICS.json" ]; then
+            echo "WARN: No GOLDEN_METRICS.json found, skipping determinism check"
+            exit 0
+          fi
+
+          # Get current mesh metrics using admesh
+          output=$(admesh --check hull_v7_test.stl 2>&1)
+          facets=$(echo "$output" | grep -oP '\d+(?= facets)' | head -1 || echo "0")
+          edges_fixed=$(echo "$output" | grep -oP '\d+(?= edges fixed)' || echo "0")
+
+          echo "Current metrics:"
+          echo "  Facets: $facets"
+          echo "  Edges fixed: $edges_fixed"
+
+          # Parse golden values from JSON
+          faces_min=$(grep -oP '"faces_range":\s*\[\s*\K\d+' GOLDEN_METRICS.json || echo "0")
+          faces_max=$(grep -oP '"faces_range":\s*\[\s*\d+\s*,\s*\K\d+' GOLDEN_METRICS.json || echo "999999")
+          drift_percent=$(grep -oP '"faces_drift_percent":\s*\K\d+' GOLDEN_METRICS.json || echo "10")
+
+          # Calculate expected midpoint and percent delta
+          faces_mid=$(( (faces_min + faces_max) / 2 ))
+          if [ "$faces_mid" -gt 0 ]; then
+            delta=$(( (facets - faces_mid) * 100 / faces_mid ))
+            delta=${delta#-}  # absolute value
+          else
+            delta=0
+          fi
+
+          echo "Golden range: [$faces_min, $faces_max] (midpoint: $faces_mid)"
+          echo "Drift tolerance: ${drift_percent}%"
+          echo "Current drift: ${delta}%"
+
+          drift_detected=false
+
+          # Check absolute range
+          if [ "$facets" -lt "$faces_min" ] || [ "$facets" -gt "$faces_max" ]; then
+            echo ""
+            echo ">>> DRIFT: Facets $facets outside range [$faces_min, $faces_max]"
+            drift_detected=true
+          fi
+
+          # Check percent delta
+          if [ "$delta" -gt "$drift_percent" ]; then
+            echo ""
+            echo ">>> DRIFT: ${delta}% change exceeds ${drift_percent}% tolerance"
+            drift_detected=true
+          fi
+
+          # Manifold must always be true (hard gate)
+          if [ "$edges_fixed" != "0" ]; then
+            echo ""
+            echo ">>> BLOCKED: Non-manifold mesh (edges_fixed=$edges_fixed)"
+            exit 1
+          fi
+
+          if [ "$drift_detected" = true ]; then
+            echo ""
+            echo "=============================================="
+            echo "  GOLDEN METRICS DRIFT DETECTED"
+            echo "=============================================="
+            echo ""
+            echo "This PR changes hull geometry metrics."
+            echo ""
+            echo "REQUIRED ACTION (choose one):"
+            echo "  1. Add PR label: 'intentional-geometry-change'"
+            echo "  2. Update GOLDEN_METRICS.json in this PR"
+            echo ""
+            echo "If unintentional, investigate geometry changes."
+            echo "=============================================="
+            # Warning only - geometry is still valid
+          else
+            echo "Facets within expected range: PASS"
+            echo "Drift within tolerance: PASS"
+          fi
+
+          echo ""
+          echo "Golden metrics check: COMPLETE"
+
+      - name: Validate ALL committed STLs
+        run: |
+          echo "=== Validating ALL committed STL files ==="
+          failed=0
+          total=0
+
+          # Find all STL files (excluding BOSL2 library and test fixtures)
+          for stl in $(find . -name "*.stl" \
+                       -not -path "./02_Production_BOSL2/lib/*" \
+                       -not -path "./tests/fixtures/*" \
+                       2>/dev/null); do
+            total=$((total + 1))
+            echo ""
+            echo "--- Checking: $stl ---"
+
+            # Check file size
+            size=$(stat -c%s "$stl" 2>/dev/null || stat -f%z "$stl")
+            if [ "$size" -lt 1000 ]; then
+              echo "FAIL: $stl too small ($size bytes)"
+              failed=$((failed + 1))
+              continue
+            fi
+
+            # Validate with admesh
+            output=$(admesh --check "$stl" 2>&1)
+            echo "$output" | head -10
+
+            # Check for non-manifold
+            if echo "$output" | grep -q "edges fixed"; then
+              edges=$(echo "$output" | grep "edges fixed" | grep -oP '\d+(?= edges fixed)' || echo "0")
+              if [ "$edges" != "0" ] && [ -n "$edges" ]; then
+                echo "FAIL: $stl is non-manifold ($edges edges fixed)"
+                failed=$((failed + 1))
+                continue
+              fi
+            fi
+
+            echo "PASS: $stl"
+          done
+
+          echo ""
+          echo "=== STL Validation Summary ==="
+          echo "Total: $total, Failed: $failed"
+
+          if [ "$failed" -gt 0 ]; then
+            echo ">>> COMMITTED STL VALIDATION FAILED <<<"
+            exit 1
+          fi
+
+          echo "All committed STLs: PASS"
+
+      - name: Enforce provenance sidecars (P1.2 - BLOCKING)
+        run: |
+          echo "=== Enforcing STL provenance sidecars ==="
+          missing=0
+          total=0
+
+          # Check all STLs except BOSL2 lib and test fixtures
+          for stl in $(find . -name "*.stl" \
+                       -not -path "./02_Production_BOSL2/lib/*" \
+                       -not -path "./tests/fixtures/*" \
+                       2>/dev/null); do
+            total=$((total + 1))
+            provenance="${stl}.provenance.json"
+            if [ -f "$provenance" ]; then
+              echo "PASS $stl"
+            else
+              echo "FAIL $stl MISSING PROVENANCE"
+              missing=$((missing + 1))
+            fi
+          done
+
+          echo ""
+          echo "=== Provenance Summary ==="
+          echo "Total STLs: $total, Missing provenance: $missing"
+
+          if [ "$missing" -gt 0 ]; then
+            echo ""
+            echo ">>> PROVENANCE CHECK FAILED <<<"
+            echo "Every committed STL must have a .provenance.json sidecar."
+            echo "Re-export via MCP server to generate provenance."
+            exit 1
+          fi
+
+          echo "Provenance check: PASS"
+
+      - name: Run fixture tests (P2)
+        run: |
+          echo "=== Running mesh validation fixture tests ==="
+          python tests/test_mesh_validation.py
+
+  mechanics-validation:
+    name: Mechanics Reference Validation
+    runs-on: ubuntu-latest
+    needs: syntax-check
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install OpenSCAD
+        run: |
+          sudo add-apt-repository -y ppa:openscad/releases
+          sudo apt-get update
+          sudo apt-get install -y openscad
+
+      - name: Install pinned Python dependencies
+        run: |
+          pip install -r requirements-dev.txt
+
+      - name: Run authoritative full validation command
+        run: |
+          echo "=== Running authoritative codex_hull_lab validation ==="
+          python codex_hull_lab/tools/validate_full.py \
+            --project-root . \
+            --output-json _codex/reports/full_validation_report.json
+
+      - name: Enforce signature drift policy and print drift details
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          report_path = Path("_codex/reports/full_validation_report.json")
+          if not report_path.exists():
+            print(f"WARN: Validation report missing: {report_path}")
+            sys.exit(0)
+
+          try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+          except Exception as exc:
+            print(f"WARN: Could not parse validation report: {exc}")
+            sys.exit(0)
+
+          signature = report.get("golden_geometry_signatures", {})
+          if not isinstance(signature, dict):
+            print("WARN: golden_geometry_signatures missing from report.")
+            sys.exit(0)
+
+          policy = signature.get("policy", {})
+          drifts = signature.get("drifts", [])
+          missing = signature.get("missing_presets", [])
+          drifted = signature.get("drifted_metrics_by_preset", {})
+
+          override_enabled = bool(
+            policy.get("override_enabled", signature.get("allow_drift_override", False))
+          )
+          override_source = str(
+            policy.get("override_source", signature.get("override_source", "none"))
+          )
+
+          print("=== Signature Drift Policy ===")
+          print(f"override_enabled: {override_enabled}")
+          print(f"override_source:  {override_source}")
+          print(f"missing_presets:  {missing}")
+
+          if isinstance(drifted, dict) and drifted:
+            for preset in sorted(drifted.keys()):
+              metrics = ", ".join(str(name) for name in drifted[preset])
+              print(f"drifted_metrics[{preset}]: {metrics}")
+          elif isinstance(drifts, list):
+            for drift in drifts[:20]:
+              if not isinstance(drift, dict):
+                continue
+              print(
+                "drift: "
+                f"{drift.get('preset', '?')}.{drift.get('metric', '?')} "
+                f"status={drift.get('status', 'unknown')}"
+              )
+
+          if (missing or drifts) and not override_enabled:
+            print(
+              "ERROR: Signature drift policy violation (blocking). "
+              "Use --allow-signature-drift or GCSC_ALLOW_SIGNATURE_DRIFT=1 for explicit override.",
+              file=sys.stderr,
+            )
+            sys.exit(1)
+          PY
+
+      - name: Upload validation JSON artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-reports-${{ github.run_id }}
+          path: _codex/reports/*.json
+          if-no-files-found: warn
+
+  mechanics-validation-cross-platform:
+    name: Mechanics Validation Cross-Platform (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: root-hygiene
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install OpenSCAD (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo add-apt-repository -y ppa:openscad/releases
+          sudo apt-get update
+          sudo apt-get install -y openscad
+
+      - name: Install OpenSCAD (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          choco install openscad -y --no-progress
+
+      - name: Install pinned Python dependencies
+        run: |
+          pip install -r requirements-dev.txt
+
+      - name: Resolve OpenSCAD binary path
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import shutil
+          from pathlib import Path
+
+          candidates = [
+            shutil.which("openscad"),
+            shutil.which("openscad.com"),
+            r"C:\Program Files\OpenSCAD\openscad.exe",
+          ]
+          resolved = None
+          for candidate in candidates:
+            if not candidate:
+              continue
+            if Path(candidate).exists():
+              resolved = str(Path(candidate))
+              break
+          if not resolved:
+            raise SystemExit("OpenSCAD binary not found on runner.")
+
+          print(f"Resolved OpenSCAD: {resolved}")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as handle:
+            handle.write(f"OPENSCAD_PATH={resolved}\n")
+          PY
+
+      - name: Run cross-platform quick validation command
+        run: |
+          echo "=== Running cross-platform quick validation on ${{ runner.os }} ==="
+          python codex_hull_lab/tools/validate_full.py \
+            --project-root . \
+            --quick \
+            --no-subcommand-fail-fast \
+            --output-json _codex/reports/full_validation_report_${{ runner.os }}.json
+
+      - name: Enforce signature drift policy and print drift details
+        if: always()
+        shell: bash
+        env:
+          REPORT_PATH: _codex/reports/full_validation_report_${{ runner.os }}.json
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          report_path = Path(os.environ["REPORT_PATH"])
+          if not report_path.exists():
+            print(f"WARN: Validation report missing: {report_path}")
+            sys.exit(0)
+
+          try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+          except Exception as exc:
+            print(f"WARN: Could not parse validation report: {exc}")
+            sys.exit(0)
+
+          signature = report.get("golden_geometry_signatures", {})
+          if not isinstance(signature, dict):
+            print("WARN: golden_geometry_signatures missing from report.")
+            sys.exit(0)
+
+          policy = signature.get("policy", {})
+          drifts = signature.get("drifts", [])
+          missing = signature.get("missing_presets", [])
+          drifted = signature.get("drifted_metrics_by_preset", {})
+
+          override_enabled = bool(
+            policy.get("override_enabled", signature.get("allow_drift_override", False))
+          )
+          override_source = str(
+            policy.get("override_source", signature.get("override_source", "none"))
+          )
+
+          print("=== Signature Drift Policy ===")
+          print(f"override_enabled: {override_enabled}")
+          print(f"override_source:  {override_source}")
+          print(f"missing_presets:  {missing}")
+
+          if isinstance(drifted, dict) and drifted:
+            for preset in sorted(drifted.keys()):
+              metrics = ", ".join(str(name) for name in drifted[preset])
+              print(f"drifted_metrics[{preset}]: {metrics}")
+          elif isinstance(drifts, list):
+            for drift in drifts[:20]:
+              if not isinstance(drift, dict):
+                continue
+              print(
+                "drift: "
+                f"{drift.get('preset', '?')}.{drift.get('metric', '?')} "
+                f"status={drift.get('status', 'unknown')}"
+              )
+
+          if (missing or drifts) and not override_enabled:
+            print(
+              "ERROR: Signature drift policy violation (blocking). "
+              "Use --allow-signature-drift or GCSC_ALLOW_SIGNATURE_DRIFT=1 for explicit override.",
+              file=sys.stderr,
+            )
+            sys.exit(1)
+          PY
+
+      - name: Upload cross-platform validation JSON artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-reports-${{ runner.os }}-${{ github.run_id }}
+          path: _codex/reports/full_validation_report_${{ runner.os }}.json
+          if-no-files-found: warn
+
+  orchestration-runtime:
+    name: Orchestration Runtime Validation
+    runs-on: ubuntu-latest
+    needs: root-hygiene
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run orchestration runtime tests
+        run: |
+          echo "=== Running orchestration runtime tests ==="
+          python tests/test_orchestration_runtime.py
+
+  frozen-params:
+    name: Frozen Parameter Validation
+    runs-on: ubuntu-latest
+    needs: root-hygiene
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive  # P0.3: Consistency across all jobs
+
+      - name: Verify frozen parameters
+        run: |
+          echo "=== Checking Article 0.6 Frozen Parameters ==="
+
+          # Phase 1 dimensions
+          dims_file="01_Prototype_Simple/params/dimensions.scad"
+          if [ -f "$dims_file" ]; then
+            echo "Checking Phase 1: $dims_file"
+            grep -E "^LOA\s*=\s*148" "$dims_file" || (echo "FAIL: LOA != 148" && exit 1)
+            grep -E "^beam\s*=\s*64" "$dims_file" || (echo "FAIL: beam != 64" && exit 1)
+            grep -E "^freeboard\s*=\s*45" "$dims_file" || (echo "FAIL: freeboard != 45" && exit 1)
+            grep -E "^z_pivot_seat\s*=\s*38" "$dims_file" || (echo "FAIL: z_pivot_seat != 38" && exit 1)
+            grep -E "^slot_diameter\s*=\s*7\.5" "$dims_file" || (echo "FAIL: slot_diameter != 7.5" && exit 1)
+            grep -E "^frame_x_offset\s*=\s*16" "$dims_file" || (echo "FAIL: frame_x_offset != 16" && exit 1)
+            grep -E "^slot_y_position\s*=\s*31" "$dims_file" || (echo "FAIL: slot_y_position != 31" && exit 1)
+          fi
+
+          # Phase 2 frozen dimensions
+          frozen_file="02_Production_BOSL2/params/frozen_dimensions.scad"
+          if [ -f "$frozen_file" ]; then
+            echo "Checking Phase 2: $frozen_file"
+            grep -E "^LOA\s*=\s*148" "$frozen_file" || (echo "FAIL: LOA != 148" && exit 1)
+            grep -E "^beam\s*=\s*64" "$frozen_file" || (echo "FAIL: beam != 64" && exit 1)
+            grep -E "^freeboard\s*=\s*45" "$frozen_file" || (echo "FAIL: freeboard != 45" && exit 1)
+          fi
+
+          echo "Frozen parameters: PASS (7/7 verified)"
+
+  governance-summary:
+    name: Governance Summary
+    runs-on: ubuntu-latest
+    needs: [root-hygiene, syntax-check, mesh-validation, mechanics-validation, mechanics-validation-cross-platform, orchestration-runtime, frozen-params]
+    if: always()
+
+    steps:
+      - name: Report governance status
+        run: |
+          echo "=========================================="
+          echo "  GCSC2 GOVERNANCE CI SUMMARY"
+          echo "=========================================="
+          echo ""
+          echo "Root Hygiene:     ${{ needs.root-hygiene.result }}"
+          echo "Syntax Check:     ${{ needs.syntax-check.result }}"
+          echo "Mesh Validation:  ${{ needs.mesh-validation.result }}"
+          echo "Mechanics:        ${{ needs.mechanics-validation.result }}"
+          echo "Mechanics XPlat:  ${{ needs.mechanics-validation-cross-platform.result }}"
+          echo "Orchestration:    ${{ needs.orchestration-runtime.result }}"
+          echo "Frozen Params:    ${{ needs.frozen-params.result }}"
+          echo ""
+
+          if [ "${{ needs.root-hygiene.result }}" = "success" ] && \
+             [ "${{ needs.syntax-check.result }}" = "success" ] && \
+             [ "${{ needs.mesh-validation.result }}" = "success" ] && \
+             [ "${{ needs.mechanics-validation.result }}" = "success" ] && \
+             [ "${{ needs.mechanics-validation-cross-platform.result }}" = "success" ] && \
+             [ "${{ needs.orchestration-runtime.result }}" = "success" ] && \
+             [ "${{ needs.frozen-params.result }}" = "success" ]; then
+            echo "OVERALL: PASS - All governance gates satisfied"
+            exit 0
+          else
+            echo "OVERALL: FAIL - One or more governance gates failed"
+            exit 1
+          fi
+

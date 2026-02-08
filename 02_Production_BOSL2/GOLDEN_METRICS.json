@@ -1,0 +1,40 @@
+{
+  "description": "Golden metrics baseline for flagship hull - changes require explicit approval",
+  "updated": "2026-02-06",
+  "coordinate_system": {
+    "units": "mm",
+    "axes": {
+      "X": "length (bow=-LOA/2, midship=0, stern=+LOA/2)",
+      "Y": "beam (port=-beam/2, starboard=+beam/2)",
+      "Z": "height (keel=0, gunwale=freeboard)"
+    },
+    "origin": "midship centerline at keel"
+  },
+  "hull_v7_bosl2": {
+    "watertight": true,
+    "is_volume": true,
+    "euler_number": 2,
+    "manifold": true,
+    "vertices_range": [7000, 8000],
+    "faces_range": [14000, 16000],
+    "expected_bounds": {
+      "min": [-74, -32, 0],
+      "max": [74, 32, 45],
+      "tolerance_mm": 2
+    },
+    "frozen_envelope": {
+      "LOA": 148,
+      "beam": 64,
+      "freeboard": 45
+    },
+    "tolerances": {
+      "vertices_drift_percent": 10,
+      "faces_drift_percent": 10,
+      "bounds_drift_mm": 2
+    },
+    "drift_policy": "WARN requires PR label 'intentional-geometry-change' or GOLDEN_METRICS.json update in same PR",
+    "stable_fields": ["watertight", "is_volume", "manifold", "euler_number", "faces", "vertices", "bounds"],
+    "non_deterministic_fields": ["export_timestamp", "source_hash", "stl_hash", "git_commit"],
+    "notes": "Based on hull_v7_step2_inner_fix.stl validation (2026-02-06). CI drift check only compares stable_fields."
+  }
+}

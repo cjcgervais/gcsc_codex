@@ -1,0 +1,86 @@
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/guard-frozen-params.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python .claude/hooks/bosl2-enforcement.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python .claude/hooks/phase1-iteration-guard.py",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/enforce-verification.py",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/check-scad-syntax.py",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "python .claude/hooks/param-consistency-check.py",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python .claude/hooks/aesthetic-consistency-check.py",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python .claude/hooks/functional-requirements-check.py",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/orchestration-governance.py",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__gcsc-openscad__export_stl",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/mesh-integrity-check.py",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}
